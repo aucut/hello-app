@@ -1,0 +1,198 @@
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+
+def calculate_rtp_and_roi(initial_rtp, withdraw_amounts, roi_rate, support_rate, months):
+    """
+    RTP, ROI ve devlet katkısı hesaplama fonksiyonu.
+    Args:
+        initial_rtp (float): İlk ay RTP yatırım miktarı.
+        withdraw_amounts (list): Her ay için geri alınacak tutar (₺).
+        roi_rate (float): ROI oranı.
+        support_rate (float): Destek oranı.
+        months (list): Ay isimleri.
+    Returns:
+        dict: Tüm hesaplanan değerleri içeren tablo.
+    """
+    num_months = len(months)
+    roi_values = [0] * num_months
+    support_income = [0] * num_months
+    next_rtp_investments = [0] * num_months
+    total_earnings = [0] * num_months
+    cumulative_withdraw = [0] * num_months
+
+    # İlk ayın hesaplamaları
+    roi_values[0] = initial_rtp * roi_rate
+    support_income[0] = initial_rtp * support_rate
+    next_rtp_investments[0] = roi_values[0] - withdraw_amounts[0]
+    total_earnings[0] = roi_values[0] + support_income[0]
+    cumulative_withdraw[0] = withdraw_amounts[0]
+
+    for i in range(1, num_months):
+        roi_values[i] = next_rtp_investments[i - 1] * roi_rate
+        support_income[i] = next_rtp_investments[i - 1] * support_rate
+        
+        if i < 4:
+            next_rtp_investments[i] = roi_values[i] - withdraw_amounts[i]
+        else:
+            next_rtp_investments[i] = roi_values[i] + support_income[i - 4] - withdraw_amounts[i]
+        
+        total_earnings[i] = roi_values[i] + support_income[i]
+        cumulative_withdraw[i] = cumulative_withdraw[i-1] + withdraw_amounts[i]
+
+    return {
+        "Aylar": months,
+        "ROI Miktarı (₺)": [round(x, 2) for x in roi_values],
+        "Destek Geliri (₺)": [round(x, 2) for x in support_income],
+        "Toplam Kazanç (₺)": [round(x, 2) for x in total_earnings],
+        "Çekilen Toplam (₺)": [round(x, 2) for x in cumulative_withdraw],
+        "Sonraki Ay RTP (₺)": [round(x, 2) for x in next_rtp_investments]
+    }
+
+def create_earnings_chart(results):
+    """Kazanç grafiği oluşturma"""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        name='ROI Miktarı',
+        x=results["Aylar"],
+        y=results["ROI Miktarı (₺)"],
+        marker_color='rgb(55, 83, 109)'
+    ))
+    
+    fig.add_trace(go.Bar(
+        name='Destek Geliri',
+        x=results["Aylar"],
+        y=results["Destek Geliri (₺)"],
+        marker_color='rgb(26, 118, 255)'
+    ))
+
+    fig.update_layout(
+        title='Aylık ROI ve Destek Geliri Dağılımı',
+        xaxis_title='Aylar',
+        yaxis_title='Miktar (₺)',
+        barmode='group',
+        showlegend=True
+    )
+    
+    return fig
+
+def main():
+    st.set_page_config(page_title="Dezztech DRS Hesaplayıcı", layout="wide")
+    
+    # Başlık ve açıklama
+    st.title("🚀 Dezztech DRS Hesaplayıcı")
+    st.markdown("""
+    Bu araç, RTP yatırımlarınız için:
+    - 📈 ROI (Yatırım Getirisi)
+    - 🏦 Devlet Desteği
+    - 💰 Toplam Kazanç
+    hesaplamalarını yapar.
+    """)
+    
+    # Sol sütun için giriş alanları
+    with st.sidebar:
+        st.header("📊 Hesaplama Parametreleri")
+        initial_rtp = st.number_input(
+            "İlk Ay RTP Yatırım Miktarı (₺)",
+            min_value=0.0,
+            value=100000.0,
+            step=1000.0,
+            format="%,.2f"
+        )
+        
+        roi_rate = st.number_input(
+            "ROI Oranı (%)",
+            min_value=0.0,
+            value=150.0,
+            step=10.0,
+            help="Aylık beklenen ROI oranı"
+        ) / 100.0
+        
+        support_rate = st.number_input(
+            "Destek Oranı (%)",
+            min_value=0.0,
+            value=60.0,
+            step=5.0,
+            help="Devlet destek oranı"
+        ) / 100.0
+        
+        num_months = st.number_input(
+            "Hesaplanacak Ay Sayısı",
+            min_value=1,
+            value=12,
+            step=1
+        )
+
+    # Ay isimleri
+    all_month_names = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                      "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    months = [all_month_names[i % 12] for i in range(num_months)]
+
+    # Geri çekim miktarları için tablo
+    st.subheader("📥 Aylık Geri Çekim Miktarları")
+    col1, col2 = st.columns(2)
+    withdraw_amounts = []
+    
+    for i in range(num_months):
+        if i % 2 == 0:
+            with col1:
+                amount = st.number_input(
+                    f"{months[i]} ayı çekim miktarı (₺)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1000.0,
+                    key=f"withdraw_{i}",
+                    format="%,.2f"
+                )
+                withdraw_amounts.append(amount)
+        else:
+            with col2:
+                amount = st.number_input(
+                    f"{months[i]} ayı çekim miktarı (₺)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1000.0,
+                    key=f"withdraw_{i}",
+                    format="%,.2f"
+                )
+                withdraw_amounts.append(amount)
+
+    # Hesaplama butonu
+    if st.button("🧮 Hesapla", use_container_width=True):
+        results = calculate_rtp_and_roi(initial_rtp, withdraw_amounts, roi_rate, support_rate, months)
+        
+        # Grafik gösterimi
+        st.plotly_chart(create_earnings_chart(results), use_container_width=True)
+        
+        # Sonuç tablosu
+        st.subheader("📊 Detaylı Sonuçlar")
+        df = pd.DataFrame(results)
+        st.dataframe(df.style.format({
+            "ROI Miktarı (₺)": "{:,.2f}",
+            "Destek Geliri (₺)": "{:,.2f}",
+            "Toplam Kazanç (₺)": "{:,.2f}",
+            "Çekilen Toplam (₺)": "{:,.2f}",
+            "Sonraki Ay RTP (₺)": "{:,.2f}"
+        }), use_container_width=True)
+        
+        # Özet istatistikler
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                "Toplam ROI",
+                f"₺{sum(results['ROI Miktarı (₺)']):,.2f}"
+            )
+        with col2:
+            st.metric(
+                "Toplam Destek",
+                f"₺{sum(results['Destek Geliri (₺)']):,.2f}"
+            )
+        with col3:
+            st.metric(
+                "Toplam Çekim",
+                f"₺{results['Çekilen Toplam (₺)'][-1]:,.2f}"
+            )
+
+if _name_ == "_main_":
+    main()
